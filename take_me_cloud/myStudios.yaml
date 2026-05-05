@@ -1,0 +1,21 @@
+
+Personal:
+  teamspace: "vaishnavahari/myml"
+  studios:
+    - name: "modern-amarnath-ou1r"
+      description: "A studio for modern Amarnath"
+      machine_default: "T4"
+      owner: "vaishnavahari"
+      tags:
+        - "rl"
+
+rwth-gut:
+  teamspace: "rwth-gut/skillcomp-ws"
+  studios:
+  - name: "net-plum-1vo2i"
+    # key: 
+    description: "A studio for net plum"
+    machine_default: "L4"
+    owner: "rwth-gut"
+    tags:
+      - "vla"

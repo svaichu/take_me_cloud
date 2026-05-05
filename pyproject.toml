@@ -1,0 +1,12 @@
+[project]
+name = "take-me-cloud"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "lightning-sdk>=2026.4.23",
+]
+
+[project.scripts]
+take-me-cloud = "take_me_cloud.cli:main"

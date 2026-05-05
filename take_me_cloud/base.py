@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable
 
 from lightning_sdk.api import TeamspaceApi, UserApi
+from lightning_sdk.cli.legacy.configure import _download_ssh_keys
+from lightning_sdk.cli.legacy.generate import _generate_ssh_config
 from lightning_sdk.lightning_cloud.login import Auth
 
 
@@ -21,6 +24,9 @@ class StudioSummary:
 	state: str | None
 	description: str | None
 	studio_id: str | None
+
+
+LIGHTNING_HOSTNAME = "ssh.lightning.ai"
 
 
 def authenticate_lightning_from_env() -> Auth:
@@ -113,5 +119,107 @@ def format_studios(studios: Iterable[StudioSummary]) -> str:
 	lines = [render_row(headers), render_row(["-" * width for width in widths])]
 	lines.extend(render_row(row) for row in table_rows)
 	return "\n".join(lines)
+
+
+def _ensure_lightning_ssh_keys(auth: Auth, ssh_dir: Path) -> Path:
+	"""Ensure Lightning SSH key pair exists and return private key path."""
+
+	key_path = ssh_dir / "lightning_rsa"
+	pub_path = ssh_dir / "lightning_rsa.pub"
+	if key_path.exists() and pub_path.exists():
+		return key_path
+
+	_download_ssh_keys(api_key=auth.api_key, ssh_home=ssh_dir, ssh_key_name="lightning_rsa", overwrite=False)
+	return key_path
+
+
+def _split_ssh_config_blocks(lines: list[str]) -> tuple[list[str], list[list[str]]]:
+	"""Split an SSH config into preamble and host blocks."""
+
+	preamble: list[str] = []
+	blocks: list[list[str]] = []
+	current: list[str] | None = None
+
+	for line in lines:
+		if line.strip().startswith("Host "):
+			if current is not None:
+				blocks.append(current)
+			current = [line]
+			continue
+
+		if current is None:
+			preamble.append(line)
+		else:
+			current.append(line)
+
+	if current is not None:
+		blocks.append(current)
+
+	return preamble, blocks
+
+
+def _is_lightning_host_block(block: list[str]) -> bool:
+	for line in block:
+		stripped = line.strip().lower()
+		if stripped.startswith("hostname ") and stripped.split(maxsplit=1)[1] == LIGHTNING_HOSTNAME:
+			return True
+	return False
+
+
+def _render_lightning_host_block(host: str, studio_id: str, key_path: Path) -> list[str]:
+	config = _generate_ssh_config(key_path=str(key_path), host=host, user=f"s_{studio_id}")
+	return [line.rstrip() for line in config.strip("\n").splitlines()]
+
+
+def lock_lightning_ssh_config(studios: Iterable[StudioSummary]) -> tuple[int, int]:
+	"""Sync Lightning hosts in ~/.ssh/config and return (kept_non_lightning, synced_lightning)."""
+
+	auth = authenticate_lightning_from_env()
+	ssh_dir = Path.home() / ".ssh"
+	ssh_dir.mkdir(parents=True, exist_ok=True)
+
+	key_path = _ensure_lightning_ssh_keys(auth, ssh_dir)
+	config_path = ssh_dir / "config"
+
+	rows = list(studios)
+	rows_by_host: dict[str, StudioSummary] = {}
+	for row in rows:
+		if row.name and row.studio_id:
+			rows_by_host[row.name] = row
+
+	existing_lines = []
+	if config_path.exists():
+		existing_lines = config_path.read_text(encoding="utf-8").splitlines()
+
+	preamble, blocks = _split_ssh_config_blocks(existing_lines)
+	non_lightning_blocks = [block for block in blocks if not _is_lightning_host_block(block)]
+
+	out_lines: list[str] = []
+	out_lines.extend(preamble)
+
+	if out_lines and out_lines[-1].strip() != "":
+		out_lines.append("")
+
+	for index, block in enumerate(non_lightning_blocks):
+		if index > 0 and out_lines and out_lines[-1].strip() != "":
+			out_lines.append("")
+		out_lines.extend(block)
+
+	if rows_by_host:
+		if out_lines and out_lines[-1].strip() != "":
+			out_lines.append("")
+
+		for index, host in enumerate(sorted(rows_by_host)):
+			if index > 0 and out_lines and out_lines[-1].strip() != "":
+				out_lines.append("")
+			studio = rows_by_host[host]
+			out_lines.extend(_render_lightning_host_block(host=host, studio_id=studio.studio_id or "", key_path=key_path))
+
+	content = "\n".join(out_lines)
+	if content and not content.endswith("\n"):
+		content += "\n"
+	config_path.write_text(content, encoding="utf-8")
+
+	return len(non_lightning_blocks), len(rows_by_host)
 
 

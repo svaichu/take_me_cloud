@@ -5,7 +5,12 @@ from __future__ import annotations
 import argparse
 import sys
 
-from take_me_cloud.base import format_studios, list_existing_studios, lock_lightning_ssh_config
+from take_me_cloud.base import (
+    create_or_replace_studio,
+    format_studios,
+    list_existing_studios,
+    lock_lightning_ssh_config,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -19,6 +24,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--lock-ssh",
         action="store_true",
         help="Sync Lightning studio SSH entries in ~/.ssh/config while preserving non-Lightning hosts",
+    )
+    parser.add_argument(
+        "--create-replace",
+        type=str,
+        metavar="NAME",
+        help="Create or replace a studio with the given name using defaults from config file",
     )
     return parser
 
@@ -45,6 +56,14 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         except (ValueError, RuntimeError, OSError) as exc:
+            print(f"take-me-cloud: {exc}", file=sys.stderr)
+            return 1
+
+    if args.create_replace:
+        try:
+            create_or_replace_studio(args.create_replace)
+            return 0
+        except (ValueError, RuntimeError, FileNotFoundError) as exc:
             print(f"take-me-cloud: {exc}", file=sys.stderr)
             return 1
 

@@ -2,9 +2,18 @@ from types import SimpleNamespace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, mock_open
 
-from take_me_cloud.base import StudioSummary, authenticate_lightning_from_env, lock_lightning_ssh_config, list_existing_studios
+from take_me_cloud.base import (
+    StudioSummary,
+    authenticate_lightning_from_env,
+    list_existing_studios,
+    load_config,
+    lock_lightning_ssh_config,
+    get_teamspace_names_from_config,
+    get_default_machine_for_teamspace,
+    create_or_replace_studio,
+)
 
 
 class TestAuthentication(TestCase):
@@ -46,6 +55,7 @@ class TestStudioListing(TestCase):
         studio1 = SimpleNamespace(
             name="studio-a",
             cluster_id="cluster-a",
+            machine="CPU",
             state="RUNNING",
             description="primary",
             id="st-1",
@@ -53,6 +63,7 @@ class TestStudioListing(TestCase):
         studio2 = SimpleNamespace(
             name="studio-b",
             cluster_id="cluster-b",
+            machine="T4",
             code_status="STOPPED",
             description="secondary",
             id="st-2",
@@ -78,6 +89,7 @@ class TestStudioListing(TestCase):
                     teamspace="teamspace-one",
                     owner="vaishnav",
                     cluster="cluster-a",
+                    machine_type="CPU",
                     state="RUNNING",
                     description="primary",
                     studio_id="st-1",
@@ -87,6 +99,7 @@ class TestStudioListing(TestCase):
                     teamspace="teamspace-two",
                     owner="org-x",
                     cluster="cluster-b",
+                    machine_type="T4",
                     state="STOPPED",
                     description="secondary",
                     studio_id="st-2",
@@ -123,6 +136,7 @@ class TestLockSsh(TestCase):
                 teamspace="ts",
                 owner="owner",
                 cluster="cluster",
+                machine_type="T4",
                 state="RUNNING",
                 description="desc",
                 studio_id="st-new",
@@ -161,3 +175,178 @@ class TestLockSsh(TestCase):
         self.assertIn("Host github.com", updated)
         self.assertIn("Host studio-new", updated)
         self.assertNotIn("Host old-lightning", updated)
+
+
+class TestConfig(TestCase):
+    def test_load_config_missing_file(self) -> None:
+        with patch("take_me_cloud.base.Path.home", return_value=Path("/nonexistent")):
+            with self.assertRaises(FileNotFoundError):
+                load_config()
+
+    def test_get_teamspace_names_from_config(self) -> None:
+        config = {
+            "machine_default": "CPU",
+            "teamspace": [
+                {"name": "org1/ts1", "machine_default": "T4"},
+                {"name": "org2/ts2"},
+            ],
+        }
+        names = get_teamspace_names_from_config(config)
+        self.assertEqual(names, ["org1/ts1", "org2/ts2"])
+
+    def test_get_default_machine_for_teamspace_override(self) -> None:
+        config = {
+            "machine_default": "CPU",
+            "teamspace": [
+                {"name": "org1/ts1", "machine_default": "T4"},
+                {"name": "org2/ts2"},
+            ],
+        }
+        machine = get_default_machine_for_teamspace(config, "org1/ts1")
+        self.assertEqual(machine, "T4")
+
+    def test_get_default_machine_for_teamspace_global_default(self) -> None:
+        config = {
+            "machine_default": "CPU",
+            "teamspace": [
+                {"name": "org1/ts1"},
+                {"name": "org2/ts2"},
+            ],
+        }
+        machine = get_default_machine_for_teamspace(config, "org2/ts2")
+        self.assertEqual(machine, "CPU")
+
+
+class TestCreateReplaceStudio(TestCase):
+    @patch("take_me_cloud.base.input")
+    @patch("take_me_cloud.base.Studio")
+    @patch("take_me_cloud.base.list_existing_studios")
+    @patch("take_me_cloud.base.load_config")
+    def test_create_or_replace_studio_creates_new_studio(
+        self,
+        load_config_mock: Mock,
+        list_existing_studios_mock: Mock,
+        studio_cls: Mock,
+        input_mock: Mock,
+    ) -> None:
+        # Setup config mock
+        load_config_mock.return_value = {
+            "machine_default": "CPU",
+            "cloud_provider": "AWS",
+            "teamspace": [
+                {"name": "vaishnavahari/myml", "owner_type": "user", "machine_default": "T4"},
+            ],
+        }
+
+        # No existing studios
+        list_existing_studios_mock.return_value = []
+
+        # Mock the Studio instance
+        studio_instance = Mock()
+        studio_cls.return_value = studio_instance
+        input_mock.return_value = "1"  # Select first (only) teamspace
+
+        # Call the function
+        create_or_replace_studio("new-studio")
+
+        # Verify Studio was created with correct params (user-owned teamspace)
+        studio_cls.assert_called_once_with(
+            name="new-studio",
+            teamspace="myml",
+            user="vaishnavahari",
+            create_ok=True,
+            cloud_provider="AWS",
+        )
+
+        # Verify start was called with machine type
+        studio_instance.start.assert_called_once_with(machine="T4")
+
+    @patch("take_me_cloud.base.input")
+    @patch("take_me_cloud.base.Studio")
+    @patch("take_me_cloud.base.list_existing_studios")
+    @patch("take_me_cloud.base.load_config")
+    def test_create_or_replace_studio_deletes_existing(
+        self,
+        load_config_mock: Mock,
+        list_existing_studios_mock: Mock,
+        studio_cls: Mock,
+        input_mock: Mock,
+    ) -> None:
+        # Setup config mock
+        load_config_mock.return_value = {
+            "machine_default": "CPU",
+            "cloud_provider": "AWS",
+            "teamspace": [
+                {"name": "vaishnavahari/myml", "owner_type": "user", "machine_default": "T4"},
+            ],
+        }
+
+        # Mock existing studio
+        existing_studio = StudioSummary(
+            name="existing-studio",
+            teamspace="myml",
+            owner="vaishnavahari",
+            cluster="cluster-1",
+            machine_type="CPU",
+            state="RUNNING",
+            description="existing",
+            studio_id="st-existing",
+        )
+        list_existing_studios_mock.return_value = [existing_studio]
+
+        # Mock the Studio instances (one for deletion, one for creation)
+        studio_instance_delete = Mock()
+        studio_instance_create = Mock()
+        studio_cls.side_effect = [studio_instance_delete, studio_instance_create]
+        input_mock.return_value = "1"
+
+        # Mock existing studio with machine_type
+        existing_studio_updated = StudioSummary(
+            name="existing-studio",
+            teamspace="myml",
+            owner="vaishnavahari",
+            cluster="cluster-1",
+            machine_type="CPU",
+            state="RUNNING",
+            description="existing",
+            studio_id="st-existing",
+        )
+        list_existing_studios_mock.return_value = [existing_studio_updated]
+
+        # Call the function
+        create_or_replace_studio("existing-studio")
+
+        # Verify Studio was called twice: once for delete, once for create
+        self.assertEqual(studio_cls.call_count, 2)
+
+        # Verify delete was called with user parameter
+        delete_call = studio_cls.call_args_list[0]
+        self.assertEqual(
+            delete_call,
+            ((),
+             {
+                 "name": "existing-studio",
+                 "teamspace": "myml",
+                 "user": "vaishnavahari",
+             }),
+        )
+
+        # Verify delete was called on the delete instance
+        studio_instance_delete.delete.assert_called_once()
+
+        # Verify create was called with correct params
+        create_call = studio_cls.call_args_list[1]
+        self.assertEqual(
+            create_call,
+            ((),
+             {
+                 "name": "existing-studio",
+                 "teamspace": "myml",
+                 "user": "vaishnavahari",
+                 "create_ok": True,
+                 "cloud_provider": "AWS",
+             }),
+        )
+
+        # Verify start was called on the create instance
+        studio_instance_create.start.assert_called_once_with(machine="T4")

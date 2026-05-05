@@ -1,0 +1,11 @@
+Lightning AI:
+  machine_default: "CPU"
+  cloud_provider: "AWS"
+  teamspace:
+  
+    - name: "vaishnavahari/myml"
+      machine_default: "CPU"
+
+    - name: "rwth-gut/skillcomp-ws"
+      machine_default: "T4"
+  

@@ -1,8 +1,16 @@
 Create a cli with the name "take-me-cloud"
 
+REMEBER AGENT.md is the entry point for the agent.
+
 Functionalities:
 1. Connect to lightning AI using lightning_sdk. Auth using the env vars $LIGHTNING_API_KEY and $LIGHTNING_USER_ID. Read those envs from shell. 
 
-2. List all existing studios. Check for all studios in all teamspaces and organizations the user has access to. Print the list of studios in a nice format. When the cli is run with flag --list or -ls. Show status of each studio (running, stopped, etc).
+2. List all existing studios. Check for all studios in all teamspaces and organizations the user has access to. When the cli is run with flag --list or -ls. Show status of each studio (running, stopped, etc). Print the studios seperated by teamspaces. Feel free to imitate the lightning_sdk cli for the formatting of the table and the information shown. Name, Owner, Machine type (-, CPU, T4, L4, etc), State.
 
 3. Lock .ssh/* files. When the cli is run with flag --lock-ssh. Make sure all the studios listed with -ls are added to the .ssh/config file. Use the lightning_sdk connect, follow their standard for ssh config. DO NOT REMOVE ANY NON-LIGHTNING HOST. If there are any existing lightning hosts that are not in the current list of studios, remove them from the .ssh/config file.
+
+4. Read take_me_cloud_config.yaml from ~/.config/take_me_cloud_config.yaml. This file will have the default machine type and cloud provider to be used in the next steps.
+
+5. During machine creation or start, show a progress bar using a progress bar library. Feel free to imitate how lightning_sdk does it in their cli.
+
+6. Create a new studio. --create-replace flag with name as argument. If a studio with the same name already exists, delete it and create a new one with the same name. Use the default machine type and cloud provider from the config file. If the config file does not exist, throw an error and ask the user to create the config file. For teamspace, make the user select interactively from the teamspace names in the config file. Use the lightning_sdk to create the studio. Example command: lightning create studio  --start T4 --cloud-provider AWS --teamspace rwth-gut/skillcomp wm. Where machine is T4, cloud provider is AWS, teamspace is rwth-gut/skillcomp and studio name is wm.

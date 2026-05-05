@@ -5,12 +5,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
+import yaml
 from lightning_sdk.api import TeamspaceApi, UserApi
 from lightning_sdk.cli.legacy.configure import _download_ssh_keys
 from lightning_sdk.cli.legacy.generate import _generate_ssh_config
 from lightning_sdk.lightning_cloud.login import Auth
+from lightning_sdk.studio import Studio
+import threading
+import time
+from tqdm import tqdm
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +26,7 @@ class StudioSummary:
 	teamspace: str
 	owner: str
 	cluster: str | None
+	machine_type: str | None
 	state: str | None
 	description: str | None
 	studio_id: str | None
@@ -81,12 +87,21 @@ def list_existing_studios() -> list[StudioSummary]:
 		seen_teamspaces.add(teamspace.id)
 
 		for studio in api.list_studios(teamspace_id=teamspace.id):
+			# Try to extract machine type from various possible attributes
+			machine_type = (
+				getattr(studio, "machine", None)
+				or getattr(studio, "machine_type", None)
+				or getattr(studio, "accelerator", None)
+				or getattr(studio, "instance_type", None)
+			)
+			
 			studios.append(
 				StudioSummary(
 					name=getattr(studio, "name", ""),
 					teamspace=getattr(teamspace, "name", ""),
 					owner=owner_name,
 					cluster=getattr(studio, "cluster_id", None),
+					machine_type=machine_type,
 					state=_studio_state(studio),
 					description=getattr(studio, "description", None),
 					studio_id=getattr(studio, "id", None),
@@ -96,29 +111,121 @@ def list_existing_studios() -> list[StudioSummary]:
 	return studios
 
 
+def _format_status(state: str | None) -> str:
+	"""Format status with icon similar to Lightning SDK CLI."""
+
+	if state is None:
+		return "✗ unknown"
+
+	state_lower = str(state).lower().strip()
+	if not state_lower:
+		return "✗ unknown"
+
+	# Map common states to icons/symbols (including Lightning SDK internal state names)
+	status_map = {
+		"running": "✓ running",
+		"cloud_space_state_ready": "✓ ready",
+		"running_job_queue": "✓ running",
+		"stopped": "✗ stopped",
+		"cloud_space_state_stopped": "✗ stopped",
+		"stopping": "⟳ stopping",
+		"starting": "⟳ starting",
+		"cloud_space_state_starting": "⟳ starting",
+		"failed": "✗ failed",
+		"pending": "⟳ pending",
+	}
+
+	for key, display in status_map.items():
+		if key in state_lower:
+			return display
+
+	return f"• {state_lower}"
+
+
 def format_studios(studios: Iterable[StudioSummary]) -> str:
-	"""Render studios as a compact plain-text table."""
+	"""Render studios grouped by teamspace, matching Lightning SDK CLI style."""
 
 	rows = list(studios)
 	if not rows:
 		return "No studios found."
 
-	headers = ["Studio", "Teamspace", "Owner", "Cluster", "State"]
-	table_rows = [
-		[row.name, row.teamspace, row.owner, row.cluster or "-", row.state or "-"] for row in rows
-	]
+	# Group studios by teamspace for clearer output
+	grouped: dict[str, list[StudioSummary]] = {}
+	for row in rows:
+		grouped.setdefault(row.teamspace, []).append(row)
 
-	widths = [len(header) for header in headers]
-	for row in table_rows:
-		for index, value in enumerate(row):
-			widths[index] = max(widths[index], len(value))
+	lines: list[str] = []
+	first_teamspace = True
+	for teamspace in sorted(grouped):
+		if not first_teamspace:
+			lines.append("")  # Blank line between teamspaces
+		first_teamspace = False
 
-	def render_row(values: list[str]) -> str:
-		return "  ".join(value.ljust(widths[index]) for index, value in enumerate(values))
+		lines.append(f"{'─' * 60}")
+		lines.append(f"  Teamspace: {teamspace}")
+		lines.append(f"{'─' * 60}")
 
-	lines = [render_row(headers), render_row(["-" * width for width in widths])]
-	lines.extend(render_row(row) for row in table_rows)
+		headers = ["NAME", "OWNER", "MACHINE", "STATE"]
+		table_rows = [
+			[
+				row.name,
+				row.owner,
+				row.machine_type or "-",
+				_format_status(row.state),
+			]
+			for row in grouped[teamspace]
+		]
+
+		# Calculate column widths
+		widths = [len(header) for header in headers]
+		for row in table_rows:
+			for index, value in enumerate(row):
+				widths[index] = max(widths[index], len(value))
+
+		def render_row(values: list[str], bold: bool = False) -> str:
+			cells = [value.ljust(widths[index]) for index, value in enumerate(values)]
+			return "  " + "  ".join(cells)
+
+		lines.append(render_row(headers, bold=True))
+		lines.append("  " + "  ".join(["─" * widths[i] for i in range(len(headers))]))
+
+		for row in table_rows:
+			lines.append(render_row(row))
+
 	return "\n".join(lines)
+
+
+def _start_with_progress(studio: Studio, machine: str, poll_interval: float = 1.0, timeout: int = 600) -> None:
+	"""Start a studio in a background thread and show a progress bar while waiting.
+
+	This runs `studio.start(machine=...)` in a thread and polls `studio.status` until
+	it reports a running state or the timeout is reached. The progress bar is a simple
+	indeterminate-style progress that advances until completion.
+	"""
+
+	def _target() -> None:
+		try:
+			studio.start(machine=machine)
+		except Exception:
+			# Let the caller handle start exceptions; they will be raised in the thread.
+			return
+
+	thread = threading.Thread(target=_target, daemon=True)
+	thread.start()
+
+	# Use a simple progress bar that advances until thread completes or timeout
+	with tqdm(total=timeout, unit="s", desc="Starting", leave=True) as pbar:
+		elapsed = 0
+		while thread.is_alive() and elapsed < timeout:
+			time.sleep(poll_interval)
+			elapsed += poll_interval
+			pbar.update(poll_interval)
+
+		if thread.is_alive():
+			raise RuntimeError("Timed out while starting the studio")
+
+	# One final small pause to allow status to settle
+	time.sleep(0.5)
 
 
 def _ensure_lightning_ssh_keys(auth: Auth, ssh_dir: Path) -> Path:
@@ -221,5 +328,155 @@ def lock_lightning_ssh_config(studios: Iterable[StudioSummary]) -> tuple[int, in
 	config_path.write_text(content, encoding="utf-8")
 
 	return len(non_lightning_blocks), len(rows_by_host)
+
+
+def load_config() -> dict[str, Any]:
+	"""Load configuration from ~/.config/take_me_cloud_config.yaml."""
+
+	config_path = Path.home() / ".config" / "take_me_cloud_config.yaml"
+	if not config_path.exists():
+		raise FileNotFoundError(
+			f"Config file not found at {config_path}. "
+			"Please create it with your default machine type, cloud provider, and teamspaces."
+		)
+
+	with config_path.open("r") as f:
+		config = yaml.safe_load(f)
+
+	if not config or "Lightning AI" not in config:
+		raise ValueError("Config file must contain 'Lightning AI' section.")
+
+	return config["Lightning AI"]
+
+
+def get_teamspace_names_from_config(config: dict[str, Any]) -> list[str]:
+	"""Extract teamspace names from configuration."""
+
+	teamspaces = config.get("teamspace", [])
+	if not teamspaces:
+		raise ValueError("No teamspaces found in configuration.")
+
+	return [ts["name"] for ts in teamspaces if isinstance(ts, dict) and "name" in ts]
+
+
+def get_default_machine_for_teamspace(config: dict[str, Any], teamspace_name: str) -> str:
+	"""Get default machine type for a teamspace, falling back to global default."""
+
+	teamspaces = config.get("teamspace", [])
+	for ts in teamspaces:
+		if isinstance(ts, dict) and ts.get("name") == teamspace_name:
+			if "machine_default" in ts:
+				return ts["machine_default"]
+
+	return config.get("machine_default", "CPU")
+
+
+def select_teamspace_interactive(teamspace_names: list[str]) -> str:
+	"""Interactively select a teamspace from the list."""
+
+	if not teamspace_names:
+		raise ValueError("No teamspaces available.")
+
+	if len(teamspace_names) == 1:
+		return teamspace_names[0]
+
+	print("\nAvailable teamspaces:")
+	for index, name in enumerate(teamspace_names, 1):
+		print(f"  {index}. {name}")
+
+	while True:
+		try:
+			choice = input("Select teamspace (number): ").strip()
+			index = int(choice) - 1
+			if 0 <= index < len(teamspace_names):
+				return teamspace_names[index]
+			print(f"Please enter a number between 1 and {len(teamspace_names)}.")
+		except ValueError:
+			print("Please enter a valid number.")
+
+
+
+def create_or_replace_studio(studio_name: str) -> None:
+	"""Create or replace a studio with the given name."""
+
+	config = load_config()
+	teamspace_names = get_teamspace_names_from_config(config)
+	selected_teamspace_full = select_teamspace_interactive(teamspace_names)
+	
+	# Parse the full teamspace name like "vaishnavahari/myml" or "rwth-gut/skillcomp-ws"
+	parts = selected_teamspace_full.split("/")
+	if len(parts) != 2:
+		raise ValueError(f"Invalid teamspace name format: {selected_teamspace_full}. Expected 'user/teamspace' or 'org/teamspace'.")
+	
+	owner, teamspace_name = parts
+	
+	# Get owner_type from config (user or org)
+	config_teamspaces = config.get("teamspace", [])
+	teamspace_info = None
+	for ts in config_teamspaces:
+		if isinstance(ts, dict) and ts.get("name") == selected_teamspace_full:
+			teamspace_info = ts
+			break
+	
+	if not teamspace_info:
+		raise ValueError(f"Teamspace '{selected_teamspace_full}' not found in configuration.")
+	
+	owner_type = teamspace_info.get("owner_type", "user").lower()
+	machine_type = get_default_machine_for_teamspace(config, selected_teamspace_full)
+	cloud_provider = config.get("cloud_provider", "AWS")
+
+	existing_studios = list_existing_studios()
+	existing_studio = next(
+		(s for s in existing_studios if s.name == studio_name),
+		None,
+	)
+
+	if existing_studio:
+		print(f"Studio '{studio_name}' already exists. Deleting...")
+		try:
+			# Build Studio kwargs with user or org for deletion
+			delete_kwargs = {
+				"name": studio_name,
+				"teamspace": existing_studio.teamspace,
+			}
+			
+			if owner_type == "org":
+				delete_kwargs["org"] = owner
+			else:
+				delete_kwargs["user"] = owner
+			
+			studio = Studio(**delete_kwargs)
+			studio.delete()
+			print(f"Studio '{studio_name}' deleted.")
+		except Exception as e:
+			raise RuntimeError(f"Failed to delete existing studio: {e}") from e
+
+	print(f"Creating new studio '{studio_name}' in teamspace '{selected_teamspace_full}'...")
+	try:
+		# Build Studio kwargs with user or org
+		studio_kwargs = {
+			"name": studio_name,
+			"teamspace": teamspace_name,
+			"create_ok": True,
+			"cloud_provider": cloud_provider,
+		}
+		
+		if owner_type == "org":
+			studio_kwargs["org"] = owner
+		else:
+			studio_kwargs["user"] = owner
+		
+		studio = Studio(**studio_kwargs)
+		print(f"Studio '{studio_name}' created successfully.")
+		
+		# Start the studio with the desired machine type (show progress)
+		print(f"Starting studio with machine type: {machine_type}...")
+		_start_with_progress(studio, machine=machine_type)
+		print(f"Studio started with machine type: {machine_type}")
+		
+		print(f"Cloud provider: {cloud_provider}")
+		print(f"Teamspace: {selected_teamspace_full}")
+	except Exception as e:
+		raise RuntimeError(f"Failed to create studio: {e}") from e
 
 

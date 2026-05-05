@@ -1,5 +1,5 @@
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from take_me_cloud.base import StudioSummary
 from take_me_cloud.cli import main
@@ -15,6 +15,7 @@ class TestCLI(TestCase):
                 teamspace="ts",
                 owner="owner",
                 cluster="cluster",
+                machine_type="T4",
                 state="RUNNING",
                 description="desc",
                 studio_id="id-1",
@@ -37,6 +38,7 @@ class TestCLI(TestCase):
                 teamspace="ts",
                 owner="owner",
                 cluster="cluster",
+                machine_type="T4",
                 state="RUNNING",
                 description="desc",
                 studio_id="id-1",
@@ -49,3 +51,10 @@ class TestCLI(TestCase):
         self.assertEqual(exit_code, 0)
         list_existing_studios.assert_called_once_with()
         lock_lightning_ssh_config.assert_called_once_with(list_existing_studios.return_value)
+
+    @patch("take_me_cloud.cli.create_or_replace_studio")
+    def test_create_replace_flag_success(self, create_or_replace_studio: Mock) -> None:
+        exit_code = main(["--create-replace", "test-studio"])
+
+        self.assertEqual(exit_code, 0)
+        create_or_replace_studio.assert_called_once_with("test-studio")

@@ -6,4 +6,6 @@ Requirements are divided into multiple md files. Read them and implement the cod
 
 2. Tooling requirements and testing scenarios are mentioned in the doc/TESTING.md file.
 
+3. Create README.md according to the doc/README.md file.
+
 Follow recommended code structure and avoid legacy code.

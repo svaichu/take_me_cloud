@@ -422,10 +422,16 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "lightning-sdk" },
+    { name = "pyyaml" },
+    { name = "tqdm" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "lightning-sdk", specifier = ">=2026.4.23" }]
+requires-dist = [
+    { name = "lightning-sdk", specifier = ">=2026.4.23" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "tqdm", specifier = ">=4.66.1" },
+]
 
 [[package]]
 name = "tqdm"

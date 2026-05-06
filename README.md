@@ -12,25 +12,34 @@ A CLI tool for seamless Lightning AI studio management and SSH configuration. Ea
 
 ## Features
 
-1. **Studio Discovery**: Connect to Lightning AI and discover all studios you have access to across teamspaces and organizations.
-2. **Studio Listing**: Display a formatted table of all accessible studios with their status, cluster, and metadata.
-3. **SSH Configuration**: Synchronize your Lightning studios with `~/.ssh/config`, enabling direct SSH access by studio name while preserving existing non-Lightning hosts.
+1. **`--list` / `-ls`**: List all accessible studios across teamspaces and organizations with their status, owner, machine type, and state.
+2. **`--lock-ssh`**: Synchronize your Lightning studios with `~/.ssh/config`, enabling direct SSH access while preserving non-Lightning hosts. Automatically removes stale Lightning entries.
+3. **`--create-replace`**: Create a new studio with default machine type and cloud provider from config. Automatically deletes any existing studio with the same name.
 
 ## Installation
 
-### Using `uv` (Recommended)
+### Using `uv`
 
 ```bash
-uv env create --python 3.13
-uv sync
-uv run take-me-cloud --help
+uv tool install take-me-cloud
 ```
 
 ### Using `pip`
 
 ```bash
+pip install take-me-cloud
+```
+
+### Development (Editable Mode)
+
+```bash
 pip install -e .
-take-me-cloud --help
+```
+
+Or with `uv`:
+
+```bash
+uv sync
 ```
 
 ## Requirements
@@ -44,6 +53,18 @@ Set the following environment variables before using the CLI:
 
 ## Usage
 
+### Configuration
+
+Before using `take-me-cloud`, create a configuration file at `~/.config/take_me_cloud_config.yaml`:
+
+```yaml
+default_machine_type: T4
+cloud_provider: AWS
+teamspaces:
+  - rwth-gut/skillcomp
+  - your-teamspace/name
+```
+
 ### List all accessible studios
 
 ```bash
@@ -54,11 +75,23 @@ take-me-cloud -ls
 
 Output:
 ```
-Studio                  Teamspace        Owner          Cluster                    State
-----------------------  ---------------  -------------  -------------------------  -----------------------
-modern-amaranth-ou1r    myml             vaishnavahari  lightning-public-prod      CLOUD_SPACE_STATE_READY
-husky-coffee-72g7       myml             vaishnavahari  lightning-public-prod      CLOUD_SPACE_STATE_READY
+Studio                  Teamspace            Owner          Machine Type    State
+----------------------  -------------------  -------------  --------------  -----------------------
+modern-amaranth-ou1r    rwth-gut/skillcomp   vaishnavahari  T4              CLOUD_SPACE_STATE_READY
+husky-coffee-72g7       rwth-gut/skillcomp   vaishnavahari  CPU             CLOUD_SPACE_STATE_READY
 ```
+
+### Create a new studio
+
+```bash
+take-me-cloud --create-replace my-studio
+```
+
+This command will:
+- Prompt you to select a teamspace from your config file
+- Create a new studio named `my-studio` with the default machine type and cloud provider
+- Delete any existing studio with the same name
+- Show a progress bar during creation
 
 ### Synchronize SSH configuration
 
@@ -77,7 +110,7 @@ Output:
 SSH config synchronized (lightning_hosts=12, non_lightning_hosts_preserved=1).
 ```
 
-## SSH Configuration Details
+### SSH Access
 
 Once `--lock-ssh` is run, you can SSH directly to any of your studios by name:
 
@@ -85,11 +118,6 @@ Once `--lock-ssh` is run, you can SSH directly to any of your studios by name:
 ssh modern-amaranth-ou1r
 ssh husky-coffee-72g7
 ```
-
-The SSH config uses:
-- Lightning AI's standard SSH gateway: `ssh.lightning.ai`
-- Automatic key-based authentication
-- Studio-specific user credentials
 
 ## Development
 

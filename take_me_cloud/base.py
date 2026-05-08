@@ -434,16 +434,31 @@ def create_or_replace_studio(studio_name: str) -> None:
 	if existing_studio:
 		print(f"Studio '{studio_name}' already exists. Deleting...")
 		try:
-			# Build Studio kwargs with user or org for deletion
+			# Parse the existing studio's teamspace to get the correct owner and owner_type
+			existing_teamspace_parts = existing_studio.teamspace.split("/")
+			if len(existing_teamspace_parts) != 2:
+				raise ValueError(f"Invalid existing teamspace format: {existing_studio.teamspace}")
+			
+			existing_owner, existing_teamspace_name = existing_teamspace_parts
+			
+			# Look up owner_type for the existing studio's teamspace from config
+			existing_full_teamspace = existing_studio.teamspace
+			existing_owner_type = "user"  # default
+			for ts in config_teamspaces:
+				if isinstance(ts, dict) and ts.get("name") == existing_full_teamspace:
+					existing_owner_type = ts.get("owner_type", "user").lower()
+					break
+			
+			# Build Studio kwargs with correct owner and owner_type for deletion
 			delete_kwargs = {
 				"name": studio_name,
-				"teamspace": existing_studio.teamspace,
+				"teamspace": existing_teamspace_name,
 			}
 			
-			if owner_type == "org":
-				delete_kwargs["org"] = owner
+			if existing_owner_type == "org":
+				delete_kwargs["org"] = existing_owner
 			else:
-				delete_kwargs["user"] = owner
+				delete_kwargs["user"] = existing_owner
 			
 			studio = Studio(**delete_kwargs)
 			studio.delete()

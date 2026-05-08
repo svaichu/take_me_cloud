@@ -284,7 +284,7 @@ class TestCreateReplaceStudio(TestCase):
         # Mock existing studio
         existing_studio = StudioSummary(
             name="existing-studio",
-            teamspace="myml",
+            teamspace="vaishnavahari/myml",
             owner="vaishnavahari",
             cluster="cluster-1",
             machine_type="CPU",
@@ -303,7 +303,7 @@ class TestCreateReplaceStudio(TestCase):
         # Mock existing studio with machine_type
         existing_studio_updated = StudioSummary(
             name="existing-studio",
-            teamspace="myml",
+            teamspace="vaishnavahari/myml",
             owner="vaishnavahari",
             cluster="cluster-1",
             machine_type="CPU",
@@ -350,3 +350,92 @@ class TestCreateReplaceStudio(TestCase):
 
         # Verify start was called on the create instance
         studio_instance_create.start.assert_called_once_with(machine="T4")
+
+    @patch("take_me_cloud.base.input")
+    @patch("take_me_cloud.base.Studio")
+    @patch("take_me_cloud.base.list_existing_studios")
+    @patch("take_me_cloud.base.load_config")
+    def test_create_or_replace_studio_deletes_from_different_teamspace(
+        self,
+        load_config_mock: Mock,
+        list_existing_studios_mock: Mock,
+        studio_cls: Mock,
+        input_mock: Mock,
+    ) -> None:
+        """Test that existing studio is deleted from its original teamspace, not the newly selected one.
+        
+        Bug scenario: User has a studio 'skillcomp' in 'rwth-gut/skillcomp-ws' (org-owned).
+        User runs: take-me-cloud --create-replace skillcomp
+        User selects: vaishnavahari/dev (user-owned) as the new location.
+        
+        Expected: Delete should use org='rwth-gut' and teamspace='skillcomp-ws' (from existing studio),
+                  not user='vaishnavahari' and teamspace='dev' (from selected teamspace).
+        """
+        # Setup config with two teamspaces
+        load_config_mock.return_value = {
+            "machine_default": "CPU",
+            "cloud_provider": "AWS",
+            "teamspace": [
+                {"name": "vaishnavahari/dev", "owner_type": "user", "machine_default": "CPU"},
+                {"name": "rwth-gut/skillcomp-ws", "owner_type": "org", "machine_default": "T4"},
+            ],
+        }
+
+        # Mock existing studio in rwth-gut/skillcomp-ws
+        existing_studio = StudioSummary(
+            name="skillcomp",
+            teamspace="rwth-gut/skillcomp-ws",
+            owner="rwth-gut",
+            cluster="cluster-1",
+            machine_type="T4",
+            state="RUNNING",
+            description="existing org-owned studio",
+            studio_id="st-existing",
+        )
+        list_existing_studios_mock.return_value = [existing_studio]
+
+        # Mock the Studio instances (one for deletion, one for creation)
+        studio_instance_delete = Mock()
+        studio_instance_create = Mock()
+        studio_cls.side_effect = [studio_instance_delete, studio_instance_create]
+        
+        # User selects vaishnavahari/dev (index 1, but will be 0-indexed so input is "1")
+        input_mock.return_value = "1"
+
+        # Call the function
+        create_or_replace_studio("skillcomp")
+
+        # Verify Studio was called twice: once for delete, once for create
+        self.assertEqual(studio_cls.call_count, 2)
+
+        # Verify delete was called with org parameter and correct teamspace from existing studio
+        delete_call = studio_cls.call_args_list[0]
+        self.assertEqual(
+            delete_call,
+            ((),
+             {
+                 "name": "skillcomp",
+                 "teamspace": "skillcomp-ws",  # From existing studio's teamspace
+                 "org": "rwth-gut",  # From existing studio's owner (org-owned)
+             }),
+        )
+
+        # Verify delete was called on the delete instance
+        studio_instance_delete.delete.assert_called_once()
+
+        # Verify create was called with user parameter and new teamspace (vaishnavahari/dev)
+        create_call = studio_cls.call_args_list[1]
+        self.assertEqual(
+            create_call,
+            ((),
+             {
+                 "name": "skillcomp",
+                 "teamspace": "dev",  # From newly selected teamspace
+                 "user": "vaishnavahari",  # From newly selected teamspace (user-owned)
+                 "create_ok": True,
+                 "cloud_provider": "AWS",
+             }),
+        )
+
+        # Verify start was called on the create instance
+        studio_instance_create.start.assert_called_once_with(machine="CPU")

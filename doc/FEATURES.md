@@ -7,7 +7,7 @@ Functionalities:
 
 2. List all existing studios. Check for all studios in all teamspaces and organizations the user has access to. When the cli is run with flag --list or -ls. Show status of each studio (running, stopped, etc). Print the studios seperated by teamspaces. Feel free to imitate the lightning_sdk cli for the formatting of the table and the information shown. Name, Owner, Machine type (-, CPU, T4, L4, etc), State.
 
-3. Lock .ssh/* files. When the cli is run with flag --lock-ssh. Make sure all the studios listed with -ls are added to the .ssh/config file. Use the lightning_sdk connect, follow their standard for ssh config. DO NOT REMOVE ANY NON-LIGHTNING HOST. If there are any existing lightning hosts that are not in the current list of studios, remove them from the .ssh/config file.
+3. Lock .ssh/* files. When the cli is run with flag --lock-ssh. Make sure all the studios listed with -ls are added to the .ssh/config file. Use the lightning_sdk connect, follow their standard for ssh config. DO NOT REMOVE ANY NON-LIGHTNING HOST. If there are any existing lightning hosts that are not in the current list of studios, remove them from the .ssh/config file. Remember studio names have to be unique across all teamspaces and organizations, if not tell the user to rename the studios to have unique names. This is required because we will be using the studio names as hostnames in the ssh config file.
 
 4. Read take_me_cloud_config.yaml from ~/.config/take_me_cloud_config.yaml. This file will have the default machine type and cloud provider to be used in the next steps.
 

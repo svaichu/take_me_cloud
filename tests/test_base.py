@@ -52,18 +52,24 @@ class TestStudioListing(TestCase):
             ("org-x", ts2),
         ]
 
+        # Create studio objects with proper nested structure for machine type
+        compute_config_cpu = SimpleNamespace(instance_type="cpu")
+        code_config_cpu = SimpleNamespace(compute_config=compute_config_cpu)
         studio1 = SimpleNamespace(
             name="studio-a",
             cluster_id="cluster-a",
-            machine="CPU",
+            code_config=code_config_cpu,
             state="RUNNING",
             description="primary",
             id="st-1",
         )
+        
+        compute_config_gpu = SimpleNamespace(instance_type="gpu-t4")
+        code_config_gpu = SimpleNamespace(compute_config=compute_config_gpu)
         studio2 = SimpleNamespace(
             name="studio-b",
             cluster_id="cluster-b",
-            machine="T4",
+            code_config=code_config_gpu,
             code_status="STOPPED",
             description="secondary",
             id="st-2",
@@ -89,7 +95,7 @@ class TestStudioListing(TestCase):
                     teamspace="teamspace-one",
                     owner="vaishnav",
                     cluster="cluster-a",
-                    machine_type="CPU",
+                    machine_type="cpu",
                     state="RUNNING",
                     description="primary",
                     studio_id="st-1",
@@ -99,7 +105,7 @@ class TestStudioListing(TestCase):
                     teamspace="teamspace-two",
                     owner="org-x",
                     cluster="cluster-b",
-                    machine_type="T4",
+                    machine_type="gpu-t4",
                     state="STOPPED",
                     description="secondary",
                     studio_id="st-2",

@@ -71,6 +71,21 @@ def _collect_owned_teamspaces(user_id: str, user_name: str, api: TeamspaceApi, u
 			yield owner_name, teamspace
 
 
+def _extract_machine_type(studio: object) -> str | None:
+	"""Extract machine type from V1CloudSpace object returned by list_studios()."""
+	
+	code_config = getattr(studio, "code_config", None)
+	if code_config is None:
+		return None
+	
+	compute_config = getattr(code_config, "compute_config", None)
+	if compute_config is None:
+		return None
+	
+	instance_type = getattr(compute_config, "instance_type", None)
+	return str(instance_type) if instance_type else None
+
+
 def list_existing_studios() -> list[StudioSummary]:
 	"""List all studios accessible to the authenticated Lightning AI user."""
 
@@ -87,21 +102,13 @@ def list_existing_studios() -> list[StudioSummary]:
 		seen_teamspaces.add(teamspace.id)
 
 		for studio in api.list_studios(teamspace_id=teamspace.id):
-			# Try to extract machine type from various possible attributes
-			machine_type = (
-				getattr(studio, "machine", None)
-				or getattr(studio, "machine_type", None)
-				or getattr(studio, "accelerator", None)
-				or getattr(studio, "instance_type", None)
-			)
-			
 			studios.append(
 				StudioSummary(
 					name=getattr(studio, "name", ""),
 					teamspace=getattr(teamspace, "name", ""),
 					owner=owner_name,
 					cluster=getattr(studio, "cluster_id", None),
-					machine_type=machine_type,
+					machine_type=_extract_machine_type(studio),
 					state=_studio_state(studio),
 					description=getattr(studio, "description", None),
 					studio_id=getattr(studio, "id", None),

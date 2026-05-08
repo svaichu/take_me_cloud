@@ -11,6 +11,23 @@ from take_me_cloud.base import (
     list_existing_studios,
     lock_lightning_ssh_config,
 )
+import tomllib
+from pathlib import Path
+import importlib.metadata
+
+
+def get_version() -> str:
+    """Return package version. Prefer installed distribution; fall back to pyproject.toml."""
+    try:
+        return importlib.metadata.version("take-me-cloud")
+    except Exception:
+        try:
+            pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+            with pyproject.open("rb") as f:
+                data = tomllib.load(f)
+            return data.get("project", {}).get("version", "")
+        except Exception:
+            return ""
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,6 +47,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         metavar="NAME",
         help="Create or replace a studio with the given name using defaults from config file",
+    )
+    parser.add_argument(
+        "--version",
+        "-v",
+        action="store_true",
+        help="Show take-me-cloud version and exit",
     )
     return parser
 
@@ -64,6 +87,15 @@ def main(argv: list[str] | None = None) -> int:
             create_or_replace_studio(args.create_replace)
             return 0
         except (ValueError, RuntimeError, FileNotFoundError) as exc:
+            print(f"take-me-cloud: {exc}", file=sys.stderr)
+            return 1
+
+    if getattr(args, "version", False):
+        try:
+            ver = get_version() or "(unknown)"
+            print(ver)
+            return 0
+        except Exception as exc:
             print(f"take-me-cloud: {exc}", file=sys.stderr)
             return 1
 

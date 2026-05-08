@@ -14,3 +14,5 @@ Functionalities:
 5. During machine creation or start, show a progress bar using a progress bar library. Feel free to imitate how lightning_sdk does it in their cli.
 
 6. Create a new studio. --create-replace flag with name as argument. If a studio with the same name already exists, delete it and create a new one with the same name. Use the default machine type and cloud provider from the config file. If the config file does not exist, throw an error and ask the user to create the config file. For teamspace, make the user select interactively from the teamspace names in the config file. Use the lightning_sdk to create the studio. Example command: lightning create studio  --start T4 --cloud-provider AWS --teamspace rwth-gut/skillcomp wm. Where machine is T4, cloud provider is AWS, teamspace is rwth-gut/skillcomp and studio name is wm.
+
+7. Show version of the cli when run with --version or -v flag.

@@ -435,19 +435,35 @@ def create_or_replace_studio(studio_name: str) -> None:
 		print(f"Studio '{studio_name}' already exists. Deleting...")
 		try:
 			# Parse the existing studio's teamspace to get the correct owner and owner_type
-			existing_teamspace_parts = existing_studio.teamspace.split("/")
-			if len(existing_teamspace_parts) != 2:
-				raise ValueError(f"Invalid existing teamspace format: {existing_studio.teamspace}")
-			
-			existing_owner, existing_teamspace_name = existing_teamspace_parts
-			
-			# Look up owner_type for the existing studio's teamspace from config
-			existing_full_teamspace = existing_studio.teamspace
-			existing_owner_type = "user"  # default
+			# existing_studio.teamspace may be either 'owner/teamspace' or just 'teamspace'.
+			# Prefer extracting owner/teamspace from the full string, but fall back to the
+			# `owner` attribute if only the teamspace name is present.
+			existing_full_teamspace = existing_studio.teamspace or ""
+			if "/" in existing_full_teamspace:
+				existing_owner, existing_teamspace_name = existing_full_teamspace.split("/", 1)
+			else:
+				existing_teamspace_name = existing_full_teamspace
+				existing_owner = existing_studio.owner or ""
+
+			# Look up owner_type for the existing studio's teamspace from config.
+			# Try matching the full 'owner/teamspace' first, then fall back to owner + teamspace name.
+			existing_owner_type = "user"
 			for ts in config_teamspaces:
-				if isinstance(ts, dict) and ts.get("name") == existing_full_teamspace:
+				if not isinstance(ts, dict):
+					continue
+				if ts.get("name") == existing_full_teamspace:
 					existing_owner_type = ts.get("owner_type", "user").lower()
 					break
+			# if not found and we have owner and teamspace_name, try owner/teamspace_name
+			if existing_owner and existing_teamspace_name:
+				candidate = f"{existing_owner}/{existing_teamspace_name}"
+				for ts in config_teamspaces:
+					if not isinstance(ts, dict):
+						continue
+					if ts.get("name") == candidate:
+						existing_owner_type = ts.get("owner_type", "user").lower()
+						existing_full_teamspace = candidate
+						break
 			
 			# Build Studio kwargs with correct owner and owner_type for deletion
 			delete_kwargs = {

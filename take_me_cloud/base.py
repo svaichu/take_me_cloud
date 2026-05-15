@@ -25,7 +25,7 @@ CONFIG_FILENAME = "take_me_cloud_config.yaml"
 LIGHTNING_HOSTNAME = "ssh.lightning.ai"
 DEFAULT_MACHINE = "CPU"
 DEFAULT_CLOUD_PROVIDER = "AWS"
-ZSH_HISTORY_COMMANDS = [
+BASH_HISTORY_COMMANDS = [
 	"uv venv /home/zeus/venv",
 	"source /home/zeus/venv/bin/activate",
 	"uv sync --active",
@@ -91,13 +91,13 @@ def authenticate_lightning_from_env() -> Auth:
 
 	api_key = os.getenv("LIGHTNING_API_KEY")
 	user_id = os.getenv("LIGHTNING_USER_ID")
-	if not api_key or not user_id:
-		raise ValueError("Set LIGHTNING_API_KEY and LIGHTNING_USER_ID before running take-me-cloud.")
-
-	auth = Auth(user_id=user_id, api_key=api_key)
+	if api_key:
+		auth = Auth(user_id=user_id, api_key=api_key) if user_id else Auth(api_key=api_key)
+	else:
+		auth = Auth()
 	auth.authenticate()
-	if not auth.user_id or not auth.api_key:
-		raise ValueError("Set LIGHTNING_API_KEY and LIGHTNING_USER_ID before running take-me-cloud.")
+	if not auth.api_key:
+		raise ValueError("Set LIGHTNING_API_KEY or sign in to Lightning before running take-me-cloud.")
 	return auth
 
 
@@ -136,8 +136,22 @@ def _extract_machine_type(studio: object) -> str | None:
 def _resolve_authed_user() -> tuple[str, str, UserApi]:
 	auth = authenticate_lightning_from_env()
 	user_api = UserApi()
-	user = user_api._get_user_by_id(auth.user_id)
-	return auth.user_id, user.username, user_api
+	username = os.getenv("LIGHTNING_USERNAME")
+	if auth.user_id:
+		user = user_api._get_user_by_id(auth.user_id)
+	elif username:
+		user = user_api.get_user(username)
+	else:
+		raise ValueError(
+			"Unable to resolve the Lightning user. Set LIGHTNING_USER_ID or LIGHTNING_USERNAME, or sign in to Lightning."
+		)
+
+	user_id_value = getattr(user, "id", None) or getattr(user, "user_id", None)
+	user_name_value = getattr(user, "username", None) or getattr(user, "name", None)
+	if not user_id_value or not user_name_value:
+		raise ValueError("Could not resolve the authenticated Lightning user.")
+
+	return str(user_id_value), str(user_name_value), user_api
 
 
 def _collect_owned_teamspaces(
@@ -491,10 +505,11 @@ def _delete_existing_studio(studio_name: str, studio: StudioSummary) -> None:
 	existing.delete()
 
 
-def _seed_zsh_history(studio: Studio) -> None:
-	script = "; ".join(f"print -s {shlex.quote(command)}" for command in ZSH_HISTORY_COMMANDS)
-	script = f"{script}; fc -W"
-	studio.run(f"zsh -ic {shlex.quote(script)}")
+def _seed_bash_history(studio: Studio) -> None:
+	script = "cat >> \"$HOME/.bash_history\" <<'EOF'\n"
+	script += "\n".join(BASH_HISTORY_COMMANDS)
+	script += "\nEOF"
+	studio.run(f"bash -lc {shlex.quote(script)}")
 
 
 def _install_remote_vscode_extensions(studio: Studio) -> None:
@@ -570,7 +585,7 @@ def create_or_replace_studio(studio_name: str) -> Studio:
 
 	studio = Studio(**studio_kwargs)
 	_start_with_progress(studio, machine=machine_type)
-	_seed_zsh_history(studio)
+	_seed_bash_history(studio)
 	return studio
 
 

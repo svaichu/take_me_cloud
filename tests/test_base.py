@@ -15,6 +15,7 @@ from take_me_cloud.base import (
     list_existing_studios,
     load_config,
     lock_lightning_ssh_config,
+    _resolve_authed_user,
     _prepare_cloned_repo,
 )
 
@@ -33,8 +34,72 @@ class TestAuthentication(TestCase):
         auth.authenticate.assert_called_once_with()
         self.assertIs(resolved, auth)
 
+    @patch.dict("os.environ", {}, clear=True)
+    @patch("take_me_cloud.base.Auth")
+    def test_authenticate_lightning_from_env_uses_cached_session(self, auth_cls: Mock) -> None:
+        auth = auth_cls.return_value
+        auth.api_key = "api-123"
+        auth.user_id = "user-123"
+
+        resolved = authenticate_lightning_from_env()
+
+        auth_cls.assert_called_once_with()
+        auth.authenticate.assert_called_once_with()
+        self.assertIs(resolved, auth)
+
+    @patch.dict("os.environ", {"LIGHTNING_API_KEY": "api-123", "LIGHTNING_USERNAME": "vaishnav"})
+    @patch("take_me_cloud.base.Auth")
+    def test_authenticate_lightning_from_env_username_fallback(self, auth_cls: Mock) -> None:
+        auth = auth_cls.return_value
+        auth.user_id = None
+        auth.api_key = "api-123"
+
+        resolved = authenticate_lightning_from_env()
+
+        auth_cls.assert_called_once_with(api_key="api-123")
+        auth.authenticate.assert_called_once_with()
+        self.assertIs(resolved, auth)
+
 
 class TestStudioListing(TestCase):
+    @patch.dict("os.environ", {}, clear=True)
+    @patch("take_me_cloud.base.UserApi")
+    @patch("take_me_cloud.base.authenticate_lightning_from_env")
+    def test_resolve_authed_user_uses_session_user_id(
+        self,
+        authenticate_lightning_from_env_mock: Mock,
+        user_api_cls: Mock,
+    ) -> None:
+        authenticate_lightning_from_env_mock.return_value = SimpleNamespace(api_key="api-123", user_id="user-123")
+        user_api = user_api_cls.return_value
+        user_api._get_user_by_id.return_value = SimpleNamespace(id="user-123", username="vaishnav")
+
+        user_id, user_name, returned_user_api = _resolve_authed_user()
+
+        self.assertEqual(user_id, "user-123")
+        self.assertEqual(user_name, "vaishnav")
+        self.assertIs(returned_user_api, user_api)
+        user_api._get_user_by_id.assert_called_once_with("user-123")
+
+    @patch.dict("os.environ", {"LIGHTNING_API_KEY": "api-123", "LIGHTNING_USERNAME": "vaishnav"})
+    @patch("take_me_cloud.base.UserApi")
+    @patch("take_me_cloud.base.authenticate_lightning_from_env")
+    def test_resolve_authed_user_username_fallback(
+        self,
+        authenticate_lightning_from_env_mock: Mock,
+        user_api_cls: Mock,
+    ) -> None:
+        authenticate_lightning_from_env_mock.return_value = SimpleNamespace(api_key="api-123", user_id=None)
+        user_api = user_api_cls.return_value
+        user_api.get_user.return_value = SimpleNamespace(id="user-123", username="vaishnav")
+
+        user_id, user_name, returned_user_api = _resolve_authed_user()
+
+        self.assertEqual(user_id, "user-123")
+        self.assertEqual(user_name, "vaishnav")
+        self.assertIs(returned_user_api, user_api)
+        user_api.get_user.assert_called_once_with("vaishnav")
+
     @patch("take_me_cloud.base._collect_owned_teamspaces")
     @patch("take_me_cloud.base.TeamspaceApi")
     @patch("take_me_cloud.base._resolve_authed_user")
@@ -244,7 +309,7 @@ class TestConfig(TestCase):
 
 
 class TestCreateReplaceStudio(TestCase):
-    @patch("take_me_cloud.base._seed_zsh_history")
+    @patch("take_me_cloud.base._seed_bash_history")
     @patch("take_me_cloud.base._start_with_progress")
     @patch("take_me_cloud.base.Studio")
     @patch("take_me_cloud.base.list_existing_studios")
@@ -257,7 +322,7 @@ class TestCreateReplaceStudio(TestCase):
         list_existing_studios_mock: Mock,
         studio_cls: Mock,
         start_with_progress_mock: Mock,
-        seed_zsh_history_mock: Mock,
+        seed_bash_history_mock: Mock,
     ) -> None:
         load_config_mock.return_value = {
             "machine_default": "CPU",
@@ -282,9 +347,9 @@ class TestCreateReplaceStudio(TestCase):
             cloud_provider="AWS",
         )
         start_with_progress_mock.assert_called_once_with(studio_instance, machine="T4")
-        seed_zsh_history_mock.assert_called_once_with(studio_instance)
+        seed_bash_history_mock.assert_called_once_with(studio_instance)
 
-    @patch("take_me_cloud.base._seed_zsh_history")
+    @patch("take_me_cloud.base._seed_bash_history")
     @patch("take_me_cloud.base._start_with_progress")
     @patch("take_me_cloud.base.Studio")
     @patch("take_me_cloud.base.list_existing_studios")
@@ -297,7 +362,7 @@ class TestCreateReplaceStudio(TestCase):
         list_existing_studios_mock: Mock,
         studio_cls: Mock,
         start_with_progress_mock: Mock,
-        seed_zsh_history_mock: Mock,
+        seed_bash_history_mock: Mock,
     ) -> None:
         load_config_mock.return_value = {
             "machine_default": "CPU",
@@ -353,7 +418,7 @@ class TestCreateReplaceStudio(TestCase):
             ),
         )
         start_with_progress_mock.assert_called_once_with(studio_instance_create, machine="T4")
-        seed_zsh_history_mock.assert_called_once_with(studio_instance_create)
+        seed_bash_history_mock.assert_called_once_with(studio_instance_create)
 
 
 class TestGoStudio(TestCase):

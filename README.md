@@ -4,7 +4,7 @@
 
 ## Introduction
 
-The CLI authenticates with Lightning AI through `LIGHTNING_API_KEY` and `LIGHTNING_USER_ID`. It uses those credentials to discover your organizations, teamspaces, and studios.
+The CLI authenticates with Lightning AI through `LIGHTNING_API_KEY` and either `LIGHTNING_USER_ID` or `LIGHTNING_USERNAME`. It uses those credentials to discover your organizations, teamspaces, and studios.
 
 ## Installation
 
@@ -65,7 +65,7 @@ This preserves non-Lightning SSH hosts, removes stale Lightning entries, and wri
 take-me-cloud --create-replace my-studio
 ```
 
-The CLI prompts for a teamspace from the config file, deletes any existing studio with the same name, starts the replacement with the configured machine type, and seeds the zsh history with common setup commands.
+The CLI prompts for a teamspace from the config file, deletes any existing studio with the same name, starts the replacement with the configured machine type, and appends common setup commands to `~/.bash_history`.
 
 ### Go studio
 

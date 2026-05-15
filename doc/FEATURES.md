@@ -17,7 +17,7 @@ Functionalities:
 
 7. Show version of the cli when run with --version or -v flag.
 
-8. In a newly created studio, add the following to zsh history so it's available in ctrl+r history search:
+8. In a newly created studio, add the following to ~/.bash_history so it's available in ctrl+r history search:
 
 ```
 uv venv /home/zeus/venv

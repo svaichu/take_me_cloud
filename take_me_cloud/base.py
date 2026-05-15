@@ -71,6 +71,21 @@ def _collect_owned_teamspaces(user_id: str, user_name: str, api: TeamspaceApi, u
 			yield owner_name, teamspace
 
 
+def _extract_machine_type(studio: object) -> str | None:
+	"""Extract machine type from V1CloudSpace object returned by list_studios()."""
+	
+	code_config = getattr(studio, "code_config", None)
+	if code_config is None:
+		return None
+	
+	compute_config = getattr(code_config, "compute_config", None)
+	if compute_config is None:
+		return None
+	
+	instance_type = getattr(compute_config, "instance_type", None)
+	return str(instance_type) if instance_type else None
+
+
 def list_existing_studios() -> list[StudioSummary]:
 	"""List all studios accessible to the authenticated Lightning AI user."""
 
@@ -87,21 +102,13 @@ def list_existing_studios() -> list[StudioSummary]:
 		seen_teamspaces.add(teamspace.id)
 
 		for studio in api.list_studios(teamspace_id=teamspace.id):
-			# Try to extract machine type from various possible attributes
-			machine_type = (
-				getattr(studio, "machine", None)
-				or getattr(studio, "machine_type", None)
-				or getattr(studio, "accelerator", None)
-				or getattr(studio, "instance_type", None)
-			)
-			
 			studios.append(
 				StudioSummary(
 					name=getattr(studio, "name", ""),
 					teamspace=getattr(teamspace, "name", ""),
 					owner=owner_name,
 					cluster=getattr(studio, "cluster_id", None),
-					machine_type=machine_type,
+					machine_type=_extract_machine_type(studio),
 					state=_studio_state(studio),
 					description=getattr(studio, "description", None),
 					studio_id=getattr(studio, "id", None),
@@ -434,16 +441,47 @@ def create_or_replace_studio(studio_name: str) -> None:
 	if existing_studio:
 		print(f"Studio '{studio_name}' already exists. Deleting...")
 		try:
-			# Build Studio kwargs with user or org for deletion
+			# Parse the existing studio's teamspace to get the correct owner and owner_type
+			# existing_studio.teamspace may be either 'owner/teamspace' or just 'teamspace'.
+			# Prefer extracting owner/teamspace from the full string, but fall back to the
+			# `owner` attribute if only the teamspace name is present.
+			existing_full_teamspace = existing_studio.teamspace or ""
+			if "/" in existing_full_teamspace:
+				existing_owner, existing_teamspace_name = existing_full_teamspace.split("/", 1)
+			else:
+				existing_teamspace_name = existing_full_teamspace
+				existing_owner = existing_studio.owner or ""
+
+			# Look up owner_type for the existing studio's teamspace from config.
+			# Try matching the full 'owner/teamspace' first, then fall back to owner + teamspace name.
+			existing_owner_type = "user"
+			for ts in config_teamspaces:
+				if not isinstance(ts, dict):
+					continue
+				if ts.get("name") == existing_full_teamspace:
+					existing_owner_type = ts.get("owner_type", "user").lower()
+					break
+			# if not found and we have owner and teamspace_name, try owner/teamspace_name
+			if existing_owner and existing_teamspace_name:
+				candidate = f"{existing_owner}/{existing_teamspace_name}"
+				for ts in config_teamspaces:
+					if not isinstance(ts, dict):
+						continue
+					if ts.get("name") == candidate:
+						existing_owner_type = ts.get("owner_type", "user").lower()
+						existing_full_teamspace = candidate
+						break
+			
+			# Build Studio kwargs with correct owner and owner_type for deletion
 			delete_kwargs = {
 				"name": studio_name,
-				"teamspace": existing_studio.teamspace,
+				"teamspace": existing_teamspace_name,
 			}
 			
-			if owner_type == "org":
-				delete_kwargs["org"] = owner
+			if existing_owner_type == "org":
+				delete_kwargs["org"] = existing_owner
 			else:
-				delete_kwargs["user"] = owner
+				delete_kwargs["user"] = existing_owner
 			
 			studio = Studio(**delete_kwargs)
 			studio.delete()

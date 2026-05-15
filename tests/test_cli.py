@@ -58,3 +58,12 @@ class TestCLI(TestCase):
 
         self.assertEqual(exit_code, 0)
         create_or_replace_studio.assert_called_once_with("test-studio")
+
+    @patch("take_me_cloud.cli.get_version")
+    def test_version_flag_success(self, get_version_mock: Mock) -> None:
+        get_version_mock.return_value = "0.1.2"
+
+        exit_code = main(["--version"])
+
+        self.assertEqual(exit_code, 0)
+        get_version_mock.assert_called_once()

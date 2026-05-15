@@ -1,3 +1,7 @@
+REMEBER AGENT.md is the entry point for the agent.
+
+Testing are in inside tests folder. 
+
 Create tooling with following scenarios:
 
 1. Auth is successful.

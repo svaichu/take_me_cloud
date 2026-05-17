@@ -1,151 +1,97 @@
 # take-me-cloud
 
-A CLI tool for seamless Lightning AI studio management and SSH configuration. Easily list all your accessible studios and automatically synchronize them with your `.ssh/config` file for quick SSH access.
+`take-me-cloud` is a CLI for working with Lightning AI studios from your shell. It can list every studio you can access, sync Lightning SSH entries into `~/.ssh/config`, create or replace studios from a local config file, and bootstrap a fresh studio for repository work.
 
 ## Introduction
 
-`take-me-cloud` simplifies working with Lightning AI studios by providing a unified command-line interface to:
-- List all studios across your teamspaces and organizations
-- View studio status and cluster information
-- Automatically configure SSH access to your studios
-- Preserve non-Lightning SSH hosts while keeping Lightning entries in sync
-
-## Features
-
-1. **`--list` / `-ls`**: List all accessible studios across teamspaces and organizations with their status, owner, machine type, and state.
-2. **`--lock-ssh`**: Synchronize your Lightning studios with `~/.ssh/config`, enabling direct SSH access while preserving non-Lightning hosts. Automatically removes stale Lightning entries.
-3. **`--create-replace`**: Create a new studio with default machine type and cloud provider from config. Automatically deletes any existing studio with the same name.
+The CLI authenticates with Lightning AI through `LIGHTNING_API_KEY` and either `LIGHTNING_USER_ID` or `LIGHTNING_USERNAME`. It uses those credentials to discover your organizations, teamspaces, and studios.
 
 ## Installation
 
-### Using `uv`
-
 ```bash
-uv tool install take-me-cloud
+pip install take_me_cloud
 ```
 
-### Using `pip`
-
 ```bash
-pip install take-me-cloud
+uv tool install take_me_cloud
 ```
 
-### Development (Editable Mode)
+For development:
 
 ```bash
 pip install -e .
 ```
 
-Or with `uv`:
+## Configuration
 
-```bash
-uv sync
+Create `~/.config/take_me_cloud_config.yaml` with a `Lightning AI` section:
+
+```yaml
+Lightning AI:
+  machine_default: T4
+  cloud_provider: AWS
+  teamspace:
+    - name: rwth-gut/skillcomp
+      owner_type: org
+    - name: vaishnavahari/myml
+      owner_type: user
+      machine_default: CPU
 ```
 
-## Requirements
-
-- Python >= 3.13
-- `lightning-sdk >= 2026.4.23`
-
-Set the following environment variables before using the CLI:
-- `LIGHTNING_API_KEY`: Your Lightning AI API key
-- `LIGHTNING_USER_ID`: Your Lightning AI user ID
+`teamspace` entries are shown interactively when you create a studio. Each entry must use `owner/teamspace` naming.
 
 ## Usage
 
-### Configuration
-
-Before using `take-me-cloud`, create a configuration file at `~/.config/take_me_cloud_config.yaml`:
-
-```yaml
-default_machine_type: T4
-cloud_provider: AWS
-teamspaces:
-  - rwth-gut/skillcomp
-  - your-teamspace/name
-```
-
-### List all accessible studios
+### List studios
 
 ```bash
 take-me-cloud --list
-# or
 take-me-cloud -ls
 ```
 
-Output:
-```
-Studio                  Teamspace            Owner          Machine Type    State
-----------------------  -------------------  -------------  --------------  -----------------------
-modern-amaranth-ou1r    rwth-gut/skillcomp   vaishnavahari  T4              CLOUD_SPACE_STATE_READY
-husky-coffee-72g7       rwth-gut/skillcomp   vaishnavahari  CPU             CLOUD_SPACE_STATE_READY
-```
+The output is grouped by teamspace and shows the studio name, owner, machine type, and current state.
 
-### Create a new studio
-
-```bash
-take-me-cloud --create-replace my-studio
-```
-
-This command will:
-- Prompt you to select a teamspace from your config file
-- Create a new studio named `my-studio` with the default machine type and cloud provider
-- Delete any existing studio with the same name
-- Show a progress bar during creation
-
-### Synchronize SSH configuration
+### Sync SSH config
 
 ```bash
 take-me-cloud --lock-ssh
 ```
 
-This command will:
-- Ensure Lightning SSH keys exist in `~/.ssh/`
-- Add all currently accessible studios to `~/.ssh/config` with proper SSH configuration
-- Remove stale Lightning studio entries that are no longer accessible
-- Preserve all non-Lightning hosts
+This preserves non-Lightning SSH hosts, removes stale Lightning entries, and writes the current accessible studios into `~/.ssh/config`.
 
-Output:
-```
-SSH config synchronized (lightning_hosts=12, non_lightning_hosts_preserved=1).
-```
-
-### SSH Access
-
-Once `--lock-ssh` is run, you can SSH directly to any of your studios by name:
+### Create or replace a studio
 
 ```bash
-ssh modern-amaranth-ou1r
-ssh husky-coffee-72g7
+take-me-cloud --create-replace my-studio
+```
+
+The CLI prompts for a teamspace from the config file, deletes any existing studio with the same name, starts the replacement with the configured machine type, and appends common setup commands to `~/.bash_history`.
+
+### Go studio
+
+```bash
+take-me-cloud --go-studio my-repo
+```
+
+This creates or replaces a studio, clones `svaichu/my-repo` into the studio home directory, writes `.vscode/settings.json`, and installs the requested VS Code extensions on the remote environment.
+
+### Version
+
+```bash
+take-me-cloud --version
+take-me-cloud -v
 ```
 
 ## Development
 
-### Run tests
+Run the tests with:
 
 ```bash
 uv run python -m unittest discover -s tests -v
 ```
 
-### Project structure
+## Project Layout
 
-```
-take-me-cloud/
-├── take_me_cloud/
-│   ├── __init__.py
-│   ├── base.py          # Core functionality (listing, SSH config)
-│   ├── cli.py           # CLI entry point and argument parsing
-├── tests/
-│   ├── test_base.py     # Core functionality tests
-│   ├── test_cli.py      # CLI tests
-├── doc/
-│   ├── AGENT.md         # Agent instructions
-│   ├── FEATURES.md      # Feature specifications
-│   ├── TESTING.md       # Testing requirements
-├── README.md
-└── pyproject.toml
-```
-
-## License
-
-MIT
+- `take_me_cloud/base.py`: Lightning helpers and SSH/config logic
+- `take_me_cloud/cli.py`: Argument parsing and command dispatch
+- `tests/`: Unit tests for the core flows

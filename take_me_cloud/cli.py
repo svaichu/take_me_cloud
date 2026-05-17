@@ -1,19 +1,20 @@
-"""CLI for listing Lightning AI studios."""
+"""CLI for managing Lightning AI studios."""
 
 from __future__ import annotations
 
+import importlib.metadata
 import argparse
 import sys
+from pathlib import Path
+import tomllib
 
 from take_me_cloud.base import (
     create_or_replace_studio,
     format_studios,
+    go_studio,
     list_existing_studios,
     lock_lightning_ssh_config,
 )
-import tomllib
-from pathlib import Path
-import importlib.metadata
 
 
 def get_version() -> str:
@@ -36,19 +37,26 @@ def build_parser() -> argparse.ArgumentParser:
         description="Manage Lightning AI studio access.",
         epilog="Requires LIGHTNING_API_KEY and LIGHTNING_USER_ID to be set.",
     )
-    parser.add_argument("--list", "-ls", action="store_true", help="List accessible studios")
-    parser.add_argument(
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--list", "-ls", action="store_true", help="List accessible studios")
+    group.add_argument(
         "--lock-ssh",
         action="store_true",
         help="Sync Lightning studio SSH entries in ~/.ssh/config while preserving non-Lightning hosts",
     )
-    parser.add_argument(
+    group.add_argument(
         "--create-replace",
         type=str,
         metavar="NAME",
         help="Create or replace a studio with the given name using defaults from config file",
     )
-    parser.add_argument(
+    group.add_argument(
+        "--go-studio",
+        type=str,
+        metavar="NAME",
+        help="Create or replace a studio, clone the matching repository, and install editor tooling",
+    )
+    group.add_argument(
         "--version",
         "-v",
         action="store_true",
@@ -60,6 +68,15 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if getattr(args, "version", False):
+        try:
+            ver = get_version() or "(unknown)"
+            print(ver)
+            return 0
+        except Exception as exc:
+            print(f"take-me-cloud: {exc}", file=sys.stderr)
+            return 1
 
     if args.list:
         try:
@@ -90,12 +107,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"take-me-cloud: {exc}", file=sys.stderr)
             return 1
 
-    if getattr(args, "version", False):
+    if args.go_studio:
         try:
-            ver = get_version() or "(unknown)"
-            print(ver)
+            go_studio(args.go_studio)
             return 0
-        except Exception as exc:
+        except (ValueError, RuntimeError, FileNotFoundError, OSError) as exc:
             print(f"take-me-cloud: {exc}", file=sys.stderr)
             return 1
 

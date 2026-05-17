@@ -12,8 +12,8 @@ class TestCLI(TestCase):
         list_existing_studios.return_value = [
             StudioSummary(
                 name="studio-a",
-                teamspace="ts",
-                owner="owner",
+                teamspace="vaishnav/teamspace-one",
+                owner="vaishnav",
                 cluster="cluster",
                 machine_type="T4",
                 state="RUNNING",
@@ -35,8 +35,8 @@ class TestCLI(TestCase):
         list_existing_studios.return_value = [
             StudioSummary(
                 name="studio-a",
-                teamspace="ts",
-                owner="owner",
+                teamspace="vaishnav/teamspace-one",
+                owner="vaishnav",
                 cluster="cluster",
                 machine_type="T4",
                 state="RUNNING",
@@ -58,6 +58,13 @@ class TestCLI(TestCase):
 
         self.assertEqual(exit_code, 0)
         create_or_replace_studio.assert_called_once_with("test-studio")
+
+    @patch("take_me_cloud.cli.go_studio")
+    def test_go_studio_flag_success(self, go_studio: Mock) -> None:
+        exit_code = main(["--go-studio", "repo/name"])
+
+        self.assertEqual(exit_code, 0)
+        go_studio.assert_called_once_with("repo/name")
 
     @patch("take_me_cloud.cli.get_version")
     def test_version_flag_success(self, get_version_mock: Mock) -> None:

@@ -524,7 +524,26 @@ def _install_remote_vscode_extensions(studio: Studio) -> None:
 	studio.run(command)
 
 
-def _prepare_cloned_repo(studio: Studio, repository_name: str) -> None:
+def _read_vscode_settings(config: dict[str, Any]) -> str:
+	settings_path_str = config.get("vscode_settings_json")
+	if not settings_path_str:
+		raise ValueError(
+			"'vscode_settings_json' is not set in the config file. "
+			"Add it pointing to a JSON file to use as .vscode/settings.json."
+		)
+	settings_path = Path(settings_path_str).expanduser()
+	if not settings_path.is_absolute():
+		settings_path = Path.home() / ".config" / settings_path
+	if not settings_path.exists():
+		raise FileNotFoundError(
+			f"vscode settings file not found at {settings_path}. "
+			"Update 'vscode_settings_json' in the config file."
+		)
+	with settings_path.open("r", encoding="utf-8") as handle:
+		return handle.read()
+
+
+def _prepare_cloned_repo(studio: Studio, repository_name: str, config: dict[str, Any]) -> None:
 	repo_name = repository_name.strip().replace("/", "")
 	if not repo_name:
 		raise ValueError("Repository name cannot be empty.")
@@ -534,13 +553,7 @@ def _prepare_cloned_repo(studio: Studio, repository_name: str) -> None:
 	)
 	studio.run(clone_command)
 
-	settings_json = json.dumps(
-		{
-			"python.pythonPath": "/home/zeus/venv/bin/python",
-			"python.terminal.activateEnvironment": True,
-		},
-		indent=4,
-	)
+	settings_json = _read_vscode_settings(config)
 	settings_command = (
 		f"cd \"$HOME/{repo_name}\" && mkdir -p .vscode && cat > .vscode/settings.json <<'EOF'\n"
 		f"{settings_json}\nEOF"
@@ -596,8 +609,9 @@ def go_studio(studio_name: str) -> Studio:
 	if not normalized_name:
 		raise ValueError("Studio name cannot be empty.")
 
+	config = load_config()
 	studio = create_or_replace_studio(normalized_name)
-	_prepare_cloned_repo(studio, normalized_name)
+	_prepare_cloned_repo(studio, normalized_name, config)
 	return studio
 
 

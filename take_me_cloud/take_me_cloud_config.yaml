@@ -9,3 +9,5 @@ Lightning AI:
     - name: "rwth-gut/skillcomp-ws"
       machine_default: "T4"
   
+  vscode_settings_json: "take_me_cloud/vscode_settings.json"
+  

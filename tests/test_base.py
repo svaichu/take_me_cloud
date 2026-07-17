@@ -422,26 +422,35 @@ class TestCreateReplaceStudio(TestCase):
 
 
 class TestGoStudio(TestCase):
+    @patch("take_me_cloud.base.load_config")
     @patch("take_me_cloud.base._prepare_cloned_repo")
     @patch("take_me_cloud.base.create_or_replace_studio")
     def test_go_studio_normalizes_name_and_prepares_repo(
         self,
         create_or_replace_studio_mock: Mock,
         prepare_cloned_repo_mock: Mock,
+        load_config_mock: Mock,
     ) -> None:
         studio = Mock()
+        config = {"vscode_settings_json": "/some/settings.json"}
         create_or_replace_studio_mock.return_value = studio
+        load_config_mock.return_value = config
 
         resolved = go_studio("repo/name")
 
         self.assertIs(resolved, studio)
         create_or_replace_studio_mock.assert_called_once_with("reponame")
-        prepare_cloned_repo_mock.assert_called_once_with(studio, "reponame")
+        prepare_cloned_repo_mock.assert_called_once_with(studio, "reponame", config)
 
     def test_prepare_cloned_repo_builds_expected_commands(self) -> None:
         studio = Mock()
 
-        _prepare_cloned_repo(studio, "my-repo")
+        with TemporaryDirectory() as tmp:
+            settings_path = Path(tmp) / "vscode_settings.json"
+            settings_path.write_text('{"python.testing.pytestEnabled": true}', encoding="utf-8")
+            config = {"vscode_settings_json": str(settings_path)}
+
+            _prepare_cloned_repo(studio, "my-repo", config)
 
         self.assertGreaterEqual(studio.run.call_count, 3)
         clone_command = studio.run.call_args_list[0].args[0]
@@ -450,6 +459,6 @@ class TestGoStudio(TestCase):
 
         self.assertIn("git clone https://github.com/svaichu/my-repo.git", clone_command)
         self.assertIn(".vscode/settings.json", settings_command)
-        self.assertIn("python.pythonPath", settings_command)
+        self.assertIn("python.testing.pytestEnabled", settings_command)
         self.assertIn("code-server", extensions_command)
         self.assertIn("ms-python.python", extensions_command)

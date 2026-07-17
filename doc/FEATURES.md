@@ -27,12 +27,6 @@ uv pip install -e .
 uv pip list
 ```
 
-9. Create a new studio and clone. When the cli is run with --go-studio flag with the name as argument, create a new studio with the same name if it does not exist. If it already exists, replace it. Ignore the "/" in the studio name if the user provides it. After creating the studio, clone repo svaichu/<name> into the studio's $HOME directory. Refer previous features for other details. Then create .vscode directory inside the cloned repo and add the following settings.json file to it:
+9. Create a new studio and clone. When the cli is run with --go-studio flag with the name as argument, create a new studio with the same name if it does not exist. If it already exists, replace it. Ignore the "/" in the studio name if the user provides it. After creating the studio, clone repo svaichu/<name> into the studio's $HOME directory. Refer previous features for other details. Then create .vscode directory inside the cloned repo and add  settings.json file to it. Contents of settings.json, should be in a file whose path is provided in the config file, vscode_settings_json. So basically, copy the json from vscode_settings_json to the settings.json file in .vscode directory.
 
-```
-{
-    "python.pythonPath": "/home/zeus/venv/bin/python",
-    "python.terminal.activateEnvironment": true
-}
-```
 Also install code remote server for the version of vscode the user has. On the remote server, install the vscode extensions: ms-python.python, lfs.vscode-emacs-friendly, ms-toolsai.jupyter.
